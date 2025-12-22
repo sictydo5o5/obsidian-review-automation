@@ -1,0 +1,69 @@
+name: Daily Obsidian Review Notify
+
+on:
+  schedule:
+    # 21:00 UTC = 06:00 JST
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch review_tasks.json from Gist
+        id: fetch_gist
+        env:
+          GIST_ID: ${{ secrets.REVIEW_GIST_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_GIST_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$GIST_ID" ]; then
+            echo "REVIEW_GIST_ID is not set"; exit 1;
+          fi
+          resp=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/gists/$GIST_ID")
+          # Check if we got an error
+          if echo "$resp" | jq -e '.message' > /dev/null 2>&1; then
+            echo "Error fetching Gist:" >&2
+            echo "$resp" | jq '.' >&2
+            exit 1
+          fi
+          echo "$resp" > gist.json
+          jq -r '.files["review_tasks.json"].content' gist.json > review_tasks.json
+          cat review_tasks.json
+
+      - name: Build LINE message
+        id: build_message
+        run: |
+          if [ ! -f review_tasks.json ]; then
+            echo "review_tasks.json not found"; exit 1;
+          fi
+
+          today_lines=$(jq -r '.today[]?.line' review_tasks.json)
+
+          if [ -z "$today_lines" ]; then
+            message="本日の復習タスクはありません。"
+          else
+            message="本日の復習タスク:\n"
+            while IFS= read -r line; do
+              message="${message}${line}\n"
+            done <<< "$today_lines"
+          fi
+
+          # Save for next step
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$message" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send LINE Notify
+        env:
+          LINE_NOTIFY_TOKEN: ${{ secrets.LINE_NOTIFY_TOKEN }}
+        run: |
+          if [ -z "$LINE_NOTIFY_TOKEN" ]; then
+            echo "LINE_NOTIFY_TOKEN is not set"; exit 1;
+          fi
+
+          curl -s -X POST "https://notify-api.line.me/api/notify" \
+            -H "Authorization: Bearer $LINE_NOTIFY_TOKEN" \
+            -F "message=${{ steps.build_message.outputs.message }}"
+
+

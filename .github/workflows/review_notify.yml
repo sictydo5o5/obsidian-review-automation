@@ -14,7 +14,7 @@ jobs:
         id: fetch_gist
         env:
           GIST_ID: ${{ secrets.REVIEW_GIST_ID }}
-          GH_TOKEN: ${{ secrets.GITHUB_GIST_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GIST_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           if [ -z "$GIST_ID" ]; then
             echo "REVIEW_GIST_ID is not set"; exit 1;
